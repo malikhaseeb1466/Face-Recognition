@@ -93,6 +93,17 @@
     let lastDisplayed = "";
     let lastSpoken = "";
     let lastSpokenTime = 0;
+    let speechUnlocked = false;
+
+    // ✅ Unlock speech on first button click
+    function unlockSpeech() {
+      if (!speechUnlocked && 'speechSynthesis' in window) {
+        speechUnlocked = true;
+        const dummy = new SpeechSynthesisUtterance("Ready");
+        dummy.volume = 0.01; // almost silent
+        window.speechSynthesis.speak(dummy);
+      }
+    }
 
     function speakName(name) {
       if ('speechSynthesis' in window) {
@@ -122,6 +133,8 @@
     }
 
     async function start() {
+      unlockSpeech(); // ✅ Enable speech right at the start button click
+
       startBtn.disabled = true;
       startBtn.textContent = 'Loading models...';
       await loadModels();
