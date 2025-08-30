@@ -1,0 +1,154 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>Face Recognition (Stable)</title>
+<style>
+  body {
+    margin: 0;
+    font-family: Arial, sans-serif;
+    background: #111;
+    color: #fff;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    height: 100vh;
+  }
+  .stage {
+    position: relative;
+    width: 800px;
+    max-width: 95vw;
+    aspect-ratio: 4/3;
+  }
+  video, canvas {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    border-radius: 10px;
+    object-fit: cover;
+  }
+  #nameOverlay {
+    position: absolute;
+    top: 8px;
+    left: 50%;
+    transform: translateX(-50%);
+    padding: 6px 14px;
+    background: rgba(0,0,0,0.6);
+    border-radius: 8px;
+    font-size: 20px;
+    font-weight: bold;
+    display: none;
+  }
+</style>
+</head>
+<body>
+  <div class="stage">
+    <video id="video" autoplay muted playsinline></video>
+    <canvas id="overlay"></canvas>
+    <div id="nameOverlay"></div>
+  </div>
+
+  <script src="https://cdn.jsdelivr.net/npm/face-api.js@0.22.2/dist/face-api.min.js"></script>
+  <script>
+    const video = document.getElementById('video');
+    const overlay = document.getElementById('overlay');
+    const nameOverlay = document.getElementById('nameOverlay');
+    
+    let lastDisplayed = "";
+    let lastSpoken = "";
+    let lastSpokenTime = 0; // for cooldown (ms)
+    
+    // ✅ speak function with queue clear
+    function speakName(name) {
+      if ('speechSynthesis' in window) {
+        window.speechSynthesis.cancel(); // clear old speeches
+        const utter = new SpeechSynthesisUtterance(name);
+        window.speechSynthesis.speak(utter);
+      }
+    }
+    
+    async function start() {
+      await Promise.all([
+        faceapi.nets.tinyFaceDetector.loadFromUri('preprocess/models'),
+        faceapi.nets.faceLandmark68Net.loadFromUri('preprocess/models'),
+        faceapi.nets.faceRecognitionNet.loadFromUri('preprocess/models')
+      ]);
+    
+      const res = await fetch('preprocess/descriptors.json');
+      const data = await res.json();
+      const labeled = data.map(p =>
+        new faceapi.LabeledFaceDescriptors(
+          p.label,
+          p.descriptors.map(d => new Float32Array(d))
+        )
+      );
+      const matcher = new faceapi.FaceMatcher(labeled, 0.5);
+    
+      const stream = await navigator.mediaDevices.getUserMedia({ video: true });
+      video.srcObject = stream;
+      await new Promise(r => (video.onloadedmetadata = r));
+    
+      overlay.width = video.videoWidth;
+      overlay.height = video.videoHeight;
+      const ctx = overlay.getContext('2d');
+      const size = { width: overlay.width, height: overlay.height };
+      faceapi.matchDimensions(overlay, size);
+    
+      async function tick() {
+        const detections = await faceapi
+          .detectAllFaces(video, new faceapi.TinyFaceDetectorOptions())
+          .withFaceLandmarks()
+          .withFaceDescriptors();
+    
+        ctx.clearRect(0, 0, overlay.width, overlay.height);
+        const resized = faceapi.resizeResults(detections, size);
+    
+        let currentName = "Unknown";
+    
+        if (resized.length > 0) {
+          const best = matcher.findBestMatch(resized[0].descriptor);
+    
+          // ✅ Agar confidence zyada ho to hi naam lo
+          if (best.distance < 0.45) {
+            currentName = best.label;
+          }
+        }
+    
+        // ✅ sirf tabhi update jab name change ho
+        if (currentName !== lastDisplayed) {
+          nameOverlay.style.display = "block";
+          nameOverlay.textContent = currentName;
+          lastDisplayed = currentName;
+    
+          // ✅ cooldown: ek hi naam 3s ke andar repeat na ho
+          const now = Date.now();
+          if (
+            currentName !== "Unknown" &&
+            (currentName !== lastSpoken || now - lastSpokenTime > 3000)
+          ) {
+            speakName(currentName);
+            lastSpoken = currentName;
+            lastSpokenTime = now;
+          }
+        }
+    
+        // ✅ Face box redraw hota rahe
+        resized.forEach((d) => {
+          const box = d.detection.box;
+          ctx.strokeStyle = "lime";
+          ctx.lineWidth = 3;
+          ctx.strokeRect(box.x, box.y, box.width, box.height);
+        });
+    
+        requestAnimationFrame(tick);
+      }
+      tick();
+    }
+    
+    start();
+    </script>
+    
+</body>
+</html>
