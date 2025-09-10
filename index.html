@@ -132,6 +132,21 @@
       );
     }
 
+    async function getCameraStream() {
+      try {
+        // Try back camera first (mobile ke liye best)
+        return await navigator.mediaDevices.getUserMedia({
+          video: { facingMode: { exact: "environment" } }
+        });
+      } catch (err) {
+        console.warn("Back camera not available, switching to front:", err);
+        // Fallback to front camera (laptop & iPhone case)
+        return await navigator.mediaDevices.getUserMedia({
+          video: { facingMode: "user" }
+        });
+      }
+    }
+
     async function start() {
       unlockSpeech(); // ✅ Enable speech right at the start button click
 
@@ -144,7 +159,7 @@
       const matcher = new faceapi.FaceMatcher(labeled, 0.5);
 
       startBtn.textContent = 'Requesting camera...';
-      const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'user' } });
+      const stream = await getCameraStream();   // ✅ yahan use ho raha hai
       video.srcObject = stream;
       await new Promise(r => video.onloadedmetadata = r);
 
@@ -199,6 +214,7 @@
       }
       tick();
     }
+
 
     startBtn.addEventListener('click', start);
   </script>
